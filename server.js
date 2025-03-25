@@ -29,6 +29,18 @@ io.on("connection", (socket) => {
     io.emit("newComment", comment);
   });
 
+  // 댓글 삭제
+  socket.on("deleteComment", (id) => {
+    comments = comments.filter(comment => comment.id !== id); // 해당 ID의 댓글 삭제
+    io.emit("deleteComment", id); // 삭제된 댓글을 클라이언트에 알림
+  });
+
+  // 전체 댓글 삭제
+  socket.on("deleteAll", () => {
+    comments = []; // 모든 댓글 삭제
+    io.emit("deleteAll"); // 모든 댓글 삭제를 클라이언트에 알림
+  });
+
   socket.on("disconnect", () => {
     console.log("사용자 연결 종료:", socket.id);
   });
