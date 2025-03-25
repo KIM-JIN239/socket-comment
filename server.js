@@ -1,40 +1,50 @@
-// server.js
-const express = require("express");
-const http = require("http");
-const socketIo = require("socket.io");
-const cors = require("cors");
-
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
 const app = express();
-app.use(cors());
-
 const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*", // 필요한 경우 특정 도메인으로 변경 가능
-    methods: ["GET", "POST"]
-  }
-});
+const io = socketIo(server);
 
-let comments = [];
+const comments = [];  // 댓글 저장용 배열
 
-io.on("connection", (socket) => {
-  console.log("사용자 연결됨:", socket.id);
+// 댓글 추가 및 삭제 처리
+io.on('connection', (socket) => {
+  console.log('A user connected');
 
-  // 기존 댓글 전송
-  socket.emit("loadComments", comments);
-
-  // 새로운 댓글 수신
-  socket.on("newComment", (comment) => {
-    comments.push(comment);
-    io.emit("newComment", comment);
+  // 댓글 추가
+  socket.on('newComment', (commentData) => {
+    comments.push(commentData);
+    io.emit('newComment', commentData); // 새로운 댓글을 모두에게 전송
   });
 
-  socket.on("disconnect", () => {
-    console.log("사용자 연결 종료:", socket.id);
+  // 댓글 삭제
+  socket.on('deleteComment', (id) => {
+    const index = comments.findIndex((comment) => comment.id === id);
+    if (index !== -1) {
+      comments.splice(index, 1);  // 댓글 삭제
+      io.emit('deleteComment', id); // 삭제된 댓글을 모든 클라이언트에 broadcast
+    }
+  });
+
+  // 전체 댓글 삭제
+  socket.on('deleteAll', () => {
+    comments.length = 0; // 배열 초기화
+    io.emit('deleteAll');  // 전체 댓글 삭제 broadcast
+  });
+
+  // 댓글 로드 (초기화)
+  socket.emit('loadComments', comments); // 기존 댓글을 클라이언트로 전달
+
+  socket.on('disconnect', () => {
+    console.log('A user disconnected');
   });
 });
 
+// 정적 파일 제공 (HTML, CSS, JS 등)
+app.use(express.static('public'));
+
+// 서버 시작
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
