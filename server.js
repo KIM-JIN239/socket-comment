@@ -17,36 +17,36 @@ const io = socketIo(server, {
 let comments = [];
 
 io.on("connection", (socket) => {
-  console.log("사용자 연결됨:", socket.id);
+  console.log("✅ 사용자 연결됨:", socket.id);
 
-  // 사용자 역할/위치 정보 등록
+  // 사용자 정보 등록
   socket.on("registerUser", (userInfo) => {
     socket.userInfo = userInfo;
 
-    if (userInfo.role === "admin") {
-      socket.emit("loadComments", comments); // 전체 댓글 전송
-    } else {
-      const filtered = comments.filter(c =>
-        c.room === userInfo.room && c.subRoom === userInfo.subRoom
-      );
-      socket.emit("loadComments", filtered); // 해당 방만 전송
-    }
+    const visibleComments = comments.filter((c) =>
+      userInfo.role === "admin" ||
+      (c.room === userInfo.room && c.subRoom === userInfo.subRoom) ||
+      c.senderId === socket.id
+    );
+
+    socket.emit("loadComments", visibleComments);
   });
 
-  // 새로운 댓글 수신
+  // 새로운 댓글 추가
   socket.on("newComment", (comment) => {
+    comment.senderId = socket.id; // 작성자 식별 정보 추가
     comments.push(comment);
 
-    // 사용자마다 조건에 따라 전송
+    // 대상별 전파
     io.sockets.sockets.forEach((s) => {
       const u = s.userInfo;
       if (!u) return;
-      if (u.role === "admin") {
-        s.emit("newComment", comment);
-      } else if (
-        u.room === comment.room &&
-        u.subRoom === comment.subRoom
-      ) {
+
+      const isSameRoom = u.room === comment.room && u.subRoom === comment.subRoom;
+      const isOwner = s.id === comment.senderId;
+      const isAdmin = u.role === "admin";
+
+      if (isAdmin || isSameRoom || isOwner) {
         s.emit("newComment", comment);
       }
     });
@@ -54,18 +54,34 @@ io.on("connection", (socket) => {
 
   // 댓글 삭제
   socket.on("deleteComment", (id) => {
-    comments = comments.filter(comment => comment.id !== id);
-    io.emit("deleteComment", id);
+    const comment = comments.find(c => c.id === id);
+    if (!comment) return;
+
+    const isAdmin = socket.userInfo?.role === "admin";
+    const isOwner = comment.senderId === socket.id;
+
+    if (isAdmin || isOwner) {
+      comments = comments.filter(c => c.id !== id);
+      io.emit("deleteComment", id);
+    } else {
+      socket.emit("error", "삭제 권한이 없습니다.");
+    }
   });
 
-  // 전체 댓글 삭제 (관리자만 호출한다고 가정)
+  // 전체 삭제 (관리자 전용)
   socket.on("deleteAll", () => {
+    const isAdmin = socket.userInfo?.role === "admin";
+    if (!isAdmin) {
+      socket.emit("error", "관리자만 전체 삭제가 가능합니다.");
+      return;
+    }
+
     comments = [];
     io.emit("deleteAll");
   });
 
   socket.on("disconnect", () => {
-    console.log("사용자 연결 종료:", socket.id);
+    console.log("👋 사용자 연결 종료:", socket.id);
   });
 });
 
