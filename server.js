@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
@@ -10,7 +9,7 @@ app.use(cors());
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "*", // 필요한 경우 특정 도메인으로 변경 가능
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -20,25 +19,49 @@ let comments = [];
 io.on("connection", (socket) => {
   console.log("사용자 연결됨:", socket.id);
 
-  // 기존 댓글 전송
-  socket.emit("loadComments", comments);
+  // 사용자 역할/위치 정보 등록
+  socket.on("registerUser", (userInfo) => {
+    socket.userInfo = userInfo;
+
+    if (userInfo.role === "admin") {
+      socket.emit("loadComments", comments); // 전체 댓글 전송
+    } else {
+      const filtered = comments.filter(c =>
+        c.room === userInfo.room && c.subRoom === userInfo.subRoom
+      );
+      socket.emit("loadComments", filtered); // 해당 방만 전송
+    }
+  });
 
   // 새로운 댓글 수신
   socket.on("newComment", (comment) => {
     comments.push(comment);
-    io.emit("newComment", comment);
+
+    // 사용자마다 조건에 따라 전송
+    io.sockets.sockets.forEach((s) => {
+      const u = s.userInfo;
+      if (!u) return;
+      if (u.role === "admin") {
+        s.emit("newComment", comment);
+      } else if (
+        u.room === comment.room &&
+        u.subRoom === comment.subRoom
+      ) {
+        s.emit("newComment", comment);
+      }
+    });
   });
 
   // 댓글 삭제
   socket.on("deleteComment", (id) => {
-    comments = comments.filter(comment => comment.id !== id); // 해당 ID의 댓글 삭제
-    io.emit("deleteComment", id); // 삭제된 댓글을 클라이언트에 알림
+    comments = comments.filter(comment => comment.id !== id);
+    io.emit("deleteComment", id);
   });
 
-  // 전체 댓글 삭제
+  // 전체 댓글 삭제 (관리자만 호출한다고 가정)
   socket.on("deleteAll", () => {
-    comments = []; // 모든 댓글 삭제
-    io.emit("deleteAll"); // 모든 댓글 삭제를 클라이언트에 알림
+    comments = [];
+    io.emit("deleteAll");
   });
 
   socket.on("disconnect", () => {
