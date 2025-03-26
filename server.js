@@ -41,7 +41,12 @@ app.get("/download-comments", (req, res) => {
   XLSX.utils.book_append_sheet(workbook, worksheet, "전체 이슈");
 
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
-  res.setHeader("Content-Disposition", "attachment; filename=시험장_전체_이슈.xlsx");
+  const encodedFilename = encodeURIComponent("시험장_전체_이슈.xlsx");
+   res.setHeader(
+  "Content-Disposition",
+  `attachment; filename*=UTF-8''${encodedFilename}`
+);
+
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.send(buffer);
 });
