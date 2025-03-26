@@ -2,7 +2,7 @@ const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const cors = require("cors");
-const XLSX = require("xlsx"); // Excel 라이브러리 추가
+const XLSX = require("xlsx"); // Excel 라이브러리
 
 const app = express();
 app.use(cors());
@@ -17,23 +17,24 @@ const io = socketIo(server, {
 
 let comments = [];
 
-// ✅ Excel 다운로드 라우트
+// ✅ Excel 다운로드 라우트 (정렬 필드 숨김)
 app.get("/download-comments", (req, res) => {
   const { pass } = req.query;
   if (pass !== "0285") {
     return res.status(403).send("비밀번호가 틀렸습니다.");
   }
 
-  const rows = comments.map(c => ({
-    시험장: c.room,
-    수검실: c.subRoom,
-    내용: c.text,
-    시간: c.time,
-    정렬기준: `${c.room}-${c.subRoom}`
-  }));
-
-  // 정렬
-  rows.sort((a, b) => a["정렬기준"].localeCompare(b["정렬기준"]));
+  // 정렬용 필드 포함 → 정렬 후 → 제거
+  const rows = comments
+    .map(c => ({
+      시험장: c.room,
+      수검실: c.subRoom,
+      내용: c.text,
+      시간: c.time,
+      _sortKey: `${c.room}-${c.subRoom}`
+    }))
+    .sort((a, b) => a._sortKey.localeCompare(b._sortKey))
+    .map(({ _sortKey, ...rest }) => rest); // 정렬키 제거
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
@@ -49,7 +50,7 @@ app.get("/download-comments", (req, res) => {
 io.on("connection", (socket) => {
   console.log("사용자 연결됨:", socket.id);
 
-  // 사용자 역할/위치 정보 등록
+  // 사용자 정보 등록
   socket.on("registerUser", (userInfo) => {
     socket.userInfo = userInfo;
 
@@ -59,24 +60,20 @@ io.on("connection", (socket) => {
       const filtered = comments.filter(c =>
         c.room === userInfo.room && c.subRoom === userInfo.subRoom
       );
-      socket.emit("loadComments", filtered); // 해당 방만 전송
+      socket.emit("loadComments", filtered);
     }
   });
 
-  // 새로운 댓글 수신
+  // 새로운 댓글
   socket.on("newComment", (comment) => {
     comments.push(comment);
 
-    // 사용자마다 조건에 따라 전송
     io.sockets.sockets.forEach((s) => {
       const u = s.userInfo;
       if (!u) return;
       if (u.role === "admin") {
         s.emit("newComment", comment);
-      } else if (
-        u.room === comment.room &&
-        u.subRoom === comment.subRoom
-      ) {
+      } else if (u.room === comment.room && u.subRoom === comment.subRoom) {
         s.emit("newComment", comment);
       }
     });
@@ -88,8 +85,12 @@ io.on("connection", (socket) => {
     io.emit("deleteComment", id);
   });
 
-  // 전체 댓글 삭제 (관리자만 호출한다고 가정)
+  // 전체 삭제 (관리자만)
   socket.on("deleteAll", () => {
+    if (socket.userInfo?.role !== "admin") {
+      socket.emit("error", "관리자만 전체 삭제가 가능합니다.");
+      return;
+    }
     comments = [];
     io.emit("deleteAll");
   });
