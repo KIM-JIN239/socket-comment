@@ -87,5 +87,34 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+  const XLSX = require("xlsx");
+
+app.get("/download-comments", (req, res) => {
+  const { pass } = req.query;
+  if (pass !== "0285") {
+    return res.status(403).send("비밀번호가 틀렸습니다.");
+  }
+
+  const rows = comments.map(c => ({
+    시험장: c.room,
+    수검실: c.subRoom,
+    내용: c.text,
+    시간: c.time,
+    작성자: c.senderId,
+    정렬키: `${c.room}-${c.subRoom}`
+  }));
+
+  // 시험장+수검실 기준 정렬
+  rows.sort((a, b) => a["정렬키"].localeCompare(b["정렬키"]));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "전체 이슈");
+
+  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Disposition", "attachment; filename=시험장_전체_이슈.xlsx");
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.send(buffer);
+});
   console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
 });
