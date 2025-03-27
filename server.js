@@ -82,19 +82,20 @@ socket.on("requestComments", ({ room, subRoom }) => {
 });
 
   // 새로운 댓글
-  socket.on("newComment", (comment) => {
-    comments.push(comment);
+ socket.on("newComment", (comment) => {
+  comments.push(comment);
 
-    io.sockets.sockets.forEach((s) => {
-  const u = s.userInfo;
-  if (!u) return;
+  io.sockets.sockets.forEach((s) => {
+    const u = s.userInfo;
+    if (!u) return;
 
-  if (u.role === "admin") {
-    s.emit("newComment", comment); // 관리자에게는 모두 전달
-  } else if (u.userId === comment.userId) {
-    s.emit("newComment", comment); // 일반 사용자는 자기 댓글만 받음
-  }
-});
+    const isSameRoom = u.room === comment.room;
+    const isSameSubRoom = u.subRoom === comment.subRoom;
+
+    if (u.role === "admin" || (isSameRoom && isSameSubRoom && u.userId === comment.userId)) {
+      s.emit("newComment", comment);
+    }
+  });
 });
   // 댓글 삭제
   socket.on("deleteComment", (id) => {
