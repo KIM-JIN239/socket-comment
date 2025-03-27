@@ -7,6 +7,11 @@ const XLSX = require("xlsx"); // Excel 라이브러리
 const app = express();
 app.use(cors());
 
+// ✅ 루트 경로 응답 추가 (UptimeRobot용)
+app.get("/", (req, res) => {
+  res.send("Socket server is alive!");
+});
+
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
