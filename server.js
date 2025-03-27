@@ -68,6 +68,18 @@ io.on("connection", (socket) => {
   socket.emit("loadComments", filtered);
 }
   });
+socket.on("requestComments", ({ room, subRoom }) => {
+  const u = socket.userInfo;
+  if (!u) return;
+
+  const filtered = comments.filter(c =>
+    c.room === room &&
+    c.subRoom === subRoom &&
+    (u.role === "admin" || c.userId === u.userId)
+  );
+
+  socket.emit("loadComments", filtered);
+});
 
   // 새로운 댓글
   socket.on("newComment", (comment) => {
