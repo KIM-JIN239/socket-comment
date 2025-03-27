@@ -59,14 +59,14 @@ io.on("connection", (socket) => {
   socket.on("registerUser", (userInfo) => {
     socket.userInfo = userInfo;
 
-    if (userInfo.role === "admin") {
-      socket.emit("loadComments", comments); // 전체 댓글 전송
-    } else {
-      const filtered = comments.filter(c =>
-        c.room === userInfo.room && c.subRoom === userInfo.subRoom
-      );
-      socket.emit("loadComments", filtered);
-    }
+   if (userInfo.role === "admin") {
+  socket.emit("loadComments", comments); // 관리자: 전체 댓글 수신
+} else {
+  const filtered = comments.filter(c =>
+    c.userId === userInfo.userId
+  );
+  socket.emit("loadComments", filtered);
+}
   });
 
   // 새로운 댓글
@@ -74,16 +74,16 @@ io.on("connection", (socket) => {
     comments.push(comment);
 
     io.sockets.sockets.forEach((s) => {
-      const u = s.userInfo;
-      if (!u) return;
-      if (u.role === "admin") {
-        s.emit("newComment", comment);
-      } else if (u.room === comment.room && u.subRoom === comment.subRoom) {
-        s.emit("newComment", comment);
-      }
-    });
-  });
+  const u = s.userInfo;
+  if (!u) return;
 
+  if (u.role === "admin") {
+    s.emit("newComment", comment); // 관리자에게는 모두 전달
+  } else if (u.userId === comment.userId) {
+    s.emit("newComment", comment); // 일반 사용자는 자기 댓글만 받음
+  }
+});
+});
   // 댓글 삭제
   socket.on("deleteComment", (id) => {
     comments = comments.filter(comment => comment.id !== id);
