@@ -34,6 +34,7 @@ app.get("/download-comments", (req, res) => {
     .map(c => ({
       시험장: c.room,
       수검실: c.subRoom,
+      감독관: c.supervisor || "",
       내용: c.text,
       시간: c.time,
       _sortKey: `${c.room}-${c.subRoom}`
