@@ -118,6 +118,32 @@ socket.on("requestComments", ({ room, subRoom }) => {
     comments = [];
     io.emit("deleteAll");
   });
+  // 댓글 수정
+socket.on("editComment", ({ id, text, userId }) => {
+  const target = comments.find(c => c.id === id);
+
+  // ✅ 댓글 존재 확인 & 작성자만 수정 허용
+  if (!target || target.userId !== userId) return;
+
+  target.text = text;
+
+  // ✅ 관리자에겐 (수정됨) 표시
+  io.sockets.sockets.forEach(s => {
+    const u = s.userInfo;
+    if (!u) return;
+
+    const isSameRoom = u.room === target.room;
+    const isSameSubRoom = u.subRoom === target.subRoom;
+
+    const isSameUser = u.userId === userId;
+
+    if (u.role !== "admin" && !(isSameUser && isSameRoom && isSameSubRoom)) return;
+
+    const modifiedText = u.role === "admin" ? `${text} (수정됨)` : text;
+    s.emit("editComment", { id, text: modifiedText });
+  });
+});
+
 
   socket.on("disconnect", () => {
     console.log("사용자 연결 종료:", socket.id);
