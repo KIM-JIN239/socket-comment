@@ -32,8 +32,8 @@ app.get("/download-comments", (req, res) => {
   // 정렬용 필드 포함 → 정렬 후 → 제거
   const rows = comments
     .map(c => ({
-      시험장: c.room,
-      수검실: c.subRoom,
+      검정장: c.room,
+      시험실: c.subRoom,
       감독관: c.supervisor || "",
       내용: c.text,
       시간: c.time,
