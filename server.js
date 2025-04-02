@@ -44,10 +44,10 @@ app.get("/download-comments", (req, res) => {
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "전체 이슈");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "검정장_전체_이슈");
 
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
-  const encodedFilename = encodeURIComponent("시험장_전체_이슈.xlsx");
+  const encodedFilename = encodeURIComponent("검정장_전체_이슈.xlsx");
    res.setHeader(
   "Content-Disposition",
   `attachment; filename*=UTF-8''${encodedFilename}`
