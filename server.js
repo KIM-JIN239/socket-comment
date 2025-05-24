@@ -2,14 +2,27 @@ const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const cors = require("cors");
-const XLSX = require("xlsx"); // Excel 라이브러리
+const XLSX = require("xlsx");
 
 const app = express();
 app.use(cors());
+app.use(express.json()); // ✅ JSON 바디 파싱
 
-// ✅ 루트 경로 응답 추가 (UptimeRobot용)
+// 루트 확인용
 app.get("/", (req, res) => {
   res.send("Socket server is alive!");
+});
+
+// ✅ 실시간 공지 전송 API 추가
+app.post("/send-popup", (req, res) => {
+  const { message } = req.body;
+
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ success: false, error: "공지 내용이 없습니다." });
+  }
+
+  io.emit("popupNotice", message); // 모든 사용자에게 전송
+  res.json({ success: true });
 });
 
 const server = http.createServer(app);
@@ -22,14 +35,11 @@ const io = socketIo(server, {
 
 let comments = [];
 
-// ✅ Excel 다운로드 라우트 (정렬 필드 숨김)
+// Excel 다운로드
 app.get("/download-comments", (req, res) => {
   const { pass } = req.query;
-  if (pass !== "0285") {
-    return res.status(403).send("비밀번호가 틀렸습니다.");
-  }
+  if (pass !== "0285") return res.status(403).send("비밀번호가 틀렸습니다.");
 
-  // 정렬용 필드 포함 → 정렬 후 → 제거
   const rows = comments
     .map(c => ({
       검정장: c.room,
@@ -40,7 +50,7 @@ app.get("/download-comments", (req, res) => {
       _sortKey: `${c.room}-${c.subRoom}`
     }))
     .sort((a, b) => a._sortKey.localeCompare(b._sortKey))
-    .map(({ _sortKey, ...rest }) => rest); // 정렬키 제거
+    .map(({ _sortKey, ...rest }) => rest);
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
@@ -48,68 +58,61 @@ app.get("/download-comments", (req, res) => {
 
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
   const encodedFilename = encodeURIComponent("검정장_전체_이슈.xlsx");
-   res.setHeader(
-  "Content-Disposition",
-  `attachment; filename*=UTF-8''${encodedFilename}`
-);
 
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodedFilename}`);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.send(buffer);
 });
 
-// ✅ 소켓 설정
+// 소켓 연결
 io.on("connection", (socket) => {
   console.log("사용자 연결됨:", socket.id);
 
-  // 사용자 정보 등록
   socket.on("registerUser", (userInfo) => {
     socket.userInfo = userInfo;
 
-   if (userInfo.role === "admin") {
-  socket.emit("loadComments", comments); // 관리자: 전체 댓글 수신
-} else {
-  const filtered = comments.filter(c =>
-    c.userId === userInfo.userId
-  );
-  socket.emit("loadComments", filtered);
-}
-  });
-socket.on("requestComments", ({ room, subRoom }) => {
-  const u = socket.userInfo;
-  if (!u) return;
-
-  const filtered = comments.filter(c =>
-    c.room === room &&
-    c.subRoom === subRoom &&
-    (u.role === "admin" || c.userId === u.userId)
-  );
-
-  socket.emit("loadComments", filtered);
-});
-
-  // 새로운 댓글
- socket.on("newComment", (comment) => {
-  comments.push(comment);
-
-  io.sockets.sockets.forEach((s) => {
-    const u = s.userInfo;
-    if (!u) return;
-
-    const isSameRoom = u.room === comment.room;
-    const isSameSubRoom = u.subRoom === comment.subRoom;
-
-    if (u.role === "admin" || (isSameRoom && isSameSubRoom && u.userId === comment.userId)) {
-      s.emit("newComment", comment);
+    if (userInfo.role === "admin") {
+      socket.emit("loadComments", comments);
+    } else {
+      const filtered = comments.filter(c => c.userId === userInfo.userId);
+      socket.emit("loadComments", filtered);
     }
   });
-});
-  // 댓글 삭제
+
+  socket.on("requestComments", ({ room, subRoom }) => {
+    const u = socket.userInfo;
+    if (!u) return;
+
+    const filtered = comments.filter(c =>
+      c.room === room &&
+      c.subRoom === subRoom &&
+      (u.role === "admin" || c.userId === u.userId)
+    );
+
+    socket.emit("loadComments", filtered);
+  });
+
+  socket.on("newComment", (comment) => {
+    comments.push(comment);
+
+    io.sockets.sockets.forEach((s) => {
+      const u = s.userInfo;
+      if (!u) return;
+
+      const isSameRoom = u.room === comment.room;
+      const isSameSubRoom = u.subRoom === comment.subRoom;
+
+      if (u.role === "admin" || (isSameRoom && isSameSubRoom && u.userId === comment.userId)) {
+        s.emit("newComment", comment);
+      }
+    });
+  });
+
   socket.on("deleteComment", (id) => {
     comments = comments.filter(comment => comment.id !== id);
     io.emit("deleteComment", id);
   });
 
-  // 전체 삭제 (관리자만)
   socket.on("deleteAll", () => {
     if (socket.userInfo?.role !== "admin") {
       socket.emit("error", "관리자만 전체 삭제가 가능합니다.");
@@ -118,39 +121,33 @@ socket.on("requestComments", ({ room, subRoom }) => {
     comments = [];
     io.emit("deleteAll");
   });
-  // 댓글 수정
-socket.on("editComment", ({ id, text, userId }) => {
-  const target = comments.find(c => c.id === id);
 
-  // ✅ 댓글 존재 확인 & 작성자만 수정 허용
-  if (!target || target.userId !== userId) return;
+  socket.on("editComment", ({ id, text, userId }) => {
+    const target = comments.find(c => c.id === id);
+    if (!target || target.userId !== userId) return;
 
-  target.text = text;
+    target.text = text;
 
-  // ✅ 관리자에겐 (수정됨) 표시
-  io.sockets.sockets.forEach(s => {
-    const u = s.userInfo;
-    if (!u) return;
+    io.sockets.sockets.forEach(s => {
+      const u = s.userInfo;
+      if (!u) return;
 
-    const isSameRoom = u.room === target.room;
-    const isSameSubRoom = u.subRoom === target.subRoom;
+      const isSameRoom = u.room === target.room;
+      const isSameSubRoom = u.subRoom === target.subRoom;
+      const isSameUser = u.userId === userId;
 
-    const isSameUser = u.userId === userId;
+      if (u.role !== "admin" && !(isSameUser && isSameRoom && isSameSubRoom)) return;
 
-    if (u.role !== "admin" && !(isSameUser && isSameRoom && isSameSubRoom)) return;
-
-    const modifiedText = u.role === "admin" ? `${text} (수정됨)` : text;
-    s.emit("editComment", { id, text: modifiedText });
+      const modifiedText = u.role === "admin" ? `${text} (수정됨)` : text;
+      s.emit("editComment", { id, text: modifiedText });
+    });
   });
-});
-
 
   socket.on("disconnect", () => {
     console.log("사용자 연결 종료:", socket.id);
   });
 });
 
-// ✅ 서버 시작
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
