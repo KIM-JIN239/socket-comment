@@ -12,19 +12,6 @@ app.use(express.json()); // ✅ JSON 바디 파싱
 app.get("/", (req, res) => {
   res.send("Socket server is alive!");
 });
-
-// ✅ 실시간 공지 전송 API 추가
-app.post("/send-popup", (req, res) => {
-  const { message } = req.body;
-
-  if (!message || typeof message !== "string") {
-    return res.status(400).json({ success: false, error: "공지 내용이 없습니다." });
-  }
-
-  io.emit("popupNotice", message); // 모든 사용자에게 전송
-  res.json({ success: true });
-});
-
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
@@ -151,4 +138,24 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+});
+
+let latestPopup = ""; // 🟢 가장 최근 공지를 저장
+
+// 기존 공지 전송 라우트 수정
+app.post("/send-popup", (req, res) => {
+  const { message } = req.body;
+
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ success: false, error: "공지 내용이 없습니다." });
+  }
+
+  latestPopup = message;                    // ✅ 저장
+  io.emit("popupNotice", message);         // ✅ 현재 접속자에게만 보냄
+  res.json({ success: true });
+});
+
+// 🆕 새로 접속한 사용자도 보게 하는 GET 라우트
+app.get("/latest-popup", (req, res) => {
+  res.json({ message: latestPopup });
 });
