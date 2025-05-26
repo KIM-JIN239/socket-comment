@@ -18,11 +18,17 @@ app.use(fileUpload());
 // 업로드 파일 경로 정적 제공 (브라우저 접근용)
 app.use("/files", express.static(path.join(__dirname, "files")));
 
+// 파일이 업로드될 디렉토리가 없으면 자동으로 생성
+const uploadDir = path.join(__dirname, "files");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 // 루트 확인용
 app.get("/", (req, res) => {
   res.send("Socket server is alive!");
 });
+
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
@@ -170,6 +176,8 @@ app.post("/send-popup", (req, res) => {
 app.get("/latest-popup", (req, res) => {
   res.json({ message: latestPopup });
 });
+
+// 파일 업로드 라우트
 app.post("/upload", (req, res) => {
   if (!req.files || !req.files.uploadedFile) {
     return res.status(400).send("❌ 업로드할 파일이 없습니다.");
