@@ -8,27 +8,10 @@ const app = express();
 app.use(cors());
 app.use(express.json()); // ✅ JSON 바디 파싱
 
-const fileUpload = require("express-fileupload");
-const path = require("path");
-const fs = require("fs");
-
-// 파일 업로드 미들웨어
-app.use(fileUpload());
-
-// 업로드 파일 경로 정적 제공 (브라우저 접근용)
-app.use("/files", express.static(path.join(__dirname, "files")));
-
-// 파일이 업로드될 디렉토리가 없으면 자동으로 생성
-const uploadDir = path.join(__dirname, "files");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
-
 // 루트 확인용
 app.get("/", (req, res) => {
   res.send("Socket server is alive!");
 });
-
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
@@ -175,25 +158,4 @@ app.post("/send-popup", (req, res) => {
 // 🆕 새로 접속한 사용자도 보게 하는 GET 라우트
 app.get("/latest-popup", (req, res) => {
   res.json({ message: latestPopup });
-});
-
-// 파일 업로드 라우트
-app.post("/upload", (req, res) => {
-  if (!req.files || !req.files.uploadedFile) {
-    return res.status(400).send("❌ 업로드할 파일이 없습니다.");
-  }
-
-  const file = req.files.uploadedFile;
-  const savePath = path.join(__dirname, "files", file.name);
-
-  // 파일 저장
-  file.mv(savePath, (err) => {
-    if (err) {
-      console.error("❌ 파일 저장 실패:", err);
-      return res.status(500).send("파일 저장 실패");
-    }
-
-    console.log("✅ 업로드 성공:", file.name);
-    res.json({ success: true, path: `/files/${file.name}` });  // 프론트엔드에서 접근 가능하게
-  });
 });
