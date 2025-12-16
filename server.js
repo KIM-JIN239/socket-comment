@@ -159,3 +159,10 @@ app.post("/send-popup", (req, res) => {
 app.get("/latest-popup", (req, res) => {
   res.json({ message: latestPopup });
 });
+
+// 🆕 공지 취소 라우트
+app.post("/cancel-popup", (req, res) => {
+  latestPopup = "";                        // ✅ 저장된 공지 제거
+  io.emit("cancelPopup");                  // ✅ 모든 클라이언트에 취소 신호
+  res.json({ success: true });
+});
