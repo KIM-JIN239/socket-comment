@@ -12,7 +12,7 @@ const io = socketIo(server, {
   cors: { origin: "*", methods: ["GET","POST"] }
 });
 const crypto = require("crypto");
-const EXCEL_PW_HASH = "f3fc70cb226d1f9c3e1c8ca9b5aba30957e43dc6269723e827b3e8fa12d230dd";
+const EXCEL_PW_HASH = "f30b68d1e316180175ecdb3eaa6bec0ca94c5ad25671a126f6b2be234b96c17f";
 app.use(cors());
 app.use(express.json());
 
