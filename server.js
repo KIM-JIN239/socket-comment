@@ -3,29 +3,55 @@ const http = require("http");
 const socketIo = require("socket.io");
 const cors = require("cors");
 const ExcelJS = require("exceljs");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
-app.use(cors());
-app.use(express.json()); // ✅ JSON 바디 파싱
-
-// 루트 확인용
-app.get("/", (req, res) => {
-  res.send("Socket server is alive!");
-});
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET","POST"] }
 });
+const crypto = require("crypto");
+const EXCEL_PW_HASH = "f3fc70cb226d1f9c3e1c8ca9b5aba30957e43dc6269723e827b3e8fa12d230dd";
+app.use(cors());
+app.use(express.json());
+
+// 데이터 파일 경로
+const DATA_FILE = path.join(__dirname, "data.json");
+
+// 파일에서 데이터 로드
+function loadData() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      comments = parsed.comments || [];
+      latestPopup = parsed.latestPopup || "";
+      console.log(`✅ 데이터 로드: 댓글 ${comments.length}개`);
+    }
+  } catch (e) {
+    console.error("데이터 로드 실패:", e.message);
+  }
+}
+
+// 파일에 데이터 저장
+function saveData() {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ comments, latestPopup }, null, 2));
+  } catch (e) {
+    console.error("데이터 저장 실패:", e.message);
+  }
+}
 
 let comments = [];
+let latestPopup = "";
 
-// Excel 다운로드
-app.get("/download-comments", async (req, res) => {
-  const { pass } = req.query;
-  if (pass !== "0285") return res.status(403).send("비밀번호가 틀렸습니다.");
+loadData(); // 서버 시작 시 기존 데이터 복원
+
+app.post("/download-comments", async (req, res) => {
+  const { pass } = req.body;
+  const passHash = crypto.createHash("sha256").update(pass || "").digest("hex");
+if (passHash !== EXCEL_PW_HASH) return res.status(403).send("비밀번호가 틀렸습니다.");
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "ICQA";
@@ -141,7 +167,6 @@ app.get("/download-comments", async (req, res) => {
     grouped[key].push(c);
   });
 
-  let prevRoom = null;
   Object.entries(grouped).forEach(([room, entries]) => {
     entries.forEach((c, idx) => {
       const isOk = c.text === "이상없음";
@@ -178,7 +203,6 @@ app.get("/download-comments", async (req, res) => {
     // 검정장 구분선 (빈 행)
     const sep = sheet2.addRow({});
     sep.height = 6;
-    prevRoom = room;
   });
 
   // ── 파일 전송 ──────────────────────────────────────
@@ -195,6 +219,7 @@ app.get("/download-comments", async (req, res) => {
 // 소켓 연결
 io.on("connection", (socket) => {
   console.log("사용자 연결됨:", socket.id);
+  io.emit("userCount", io.sockets.sockets.size);
 
   socket.on("registerUser", (userInfo) => {
     socket.userInfo = userInfo;
@@ -222,6 +247,7 @@ io.on("connection", (socket) => {
 
   socket.on("newComment", (comment) => {
     comments.push(comment);
+    saveData();
 
     io.sockets.sockets.forEach((s) => {
       const u = s.userInfo;
@@ -238,6 +264,7 @@ io.on("connection", (socket) => {
 
   socket.on("deleteComment", (id) => {
     comments = comments.filter(comment => comment.id !== id);
+    saveData();
     io.emit("deleteComment", id);
   });
 
@@ -247,6 +274,7 @@ io.on("connection", (socket) => {
       return;
     }
     comments = [];
+    saveData();
     io.emit("deleteAll");
   });
 
@@ -255,6 +283,7 @@ io.on("connection", (socket) => {
     if (!target || target.userId !== userId) return;
 
     target.text = text;
+    saveData();
 
     io.sockets.sockets.forEach(s => {
       const u = s.userInfo;
@@ -271,17 +300,30 @@ io.on("connection", (socket) => {
     });
   });
 
+// 공지 전송 소켓 이벤트 (admin.html에서 emit)
+  socket.on("sendPopup", (message) => {
+    if (typeof message !== "string" || !message.trim()) return;
+    latestPopup = message;
+    saveData();
+    io.emit("popupNotice", message);
+    console.log("공지 전송:", message.substring(0, 30));
+  });
+
+  // 공지 취소 소켓 이벤트
+  socket.on("cancelPopup", () => {
+    latestPopup = "";
+    saveData();
+    io.emit("cancelPopup");
+    console.log("공지 취소됨");
+  });
+
   socket.on("disconnect", () => {
     console.log("사용자 연결 종료:", socket.id);
+   io.emit("userCount", io.sockets.sockets.size);
   });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
-});
-
-let latestPopup = ""; // 🟢 가장 최근 공지를 저장
 
 // 기존 공지 전송 라우트 수정
 app.post("/send-popup", (req, res) => {
@@ -292,6 +334,7 @@ app.post("/send-popup", (req, res) => {
   }
 
   latestPopup = message;                    // ✅ 저장
+  saveData();
   io.emit("popupNotice", message);         // ✅ 현재 접속자에게만 보냄
   res.json({ success: true });
 });
@@ -304,6 +347,10 @@ app.get("/latest-popup", (req, res) => {
 // 🆕 공지 취소 라우트
 app.post("/cancel-popup", (req, res) => {
   latestPopup = "";                        // ✅ 저장된 공지 제거
+  saveData();
   io.emit("cancelPopup");                  // ✅ 모든 클라이언트에 취소 신호
   res.json({ success: true });
+});
+server.listen(PORT, () => {
+  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
 });
